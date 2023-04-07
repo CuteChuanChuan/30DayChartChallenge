@@ -1,0 +1,242 @@
+---
+title: "30 Day Chart Challenge - Day 05"
+author: "Yu-Chuan Hung"
+format: 
+  html: 
+    toc: true
+    self-contained: true
+editor_options: 
+  chunk_output_type: console
+---
+
+# Library
+
+```{r Library, echo=TRUE, warning=FALSE, output=FALSE, message=FALSE}
+library(tidyverse)
+library(here)
+library(sjmisc)
+library(gt)
+```
+
+# Data
+
+- Source: [Makeover Monday](https://data.world/makeovermonday/2023w14)
+
+```{r}
+hate_crime <- rio::import(here("Day 05/01. Data/Hate Crime in Chicago.xlsx")) |> as_tibble()
+```
+
+```{r}
+skimr::skim(hate_crime)
+
+head(hate_crime)
+```
+
+# Wrangling
+
+## Date and Time
+
+```{r}
+hate_crime <- hate_crime |> 
+    mutate(DATE_new = case_when(
+        str_detect(DATE, "\\/") == TRUE  ~ as.Date(DATE, format = "%m/%d/%Y"),
+        str_detect(DATE, "\\/") == FALSE ~ ydm(as.Date(as.Date(as.numeric(DATE), origin = "1899-12-30"), format = "%Y-%d-%m")),
+        is.na(DATE)                      ~ NA_Date_), .after = DATE) |> 
+    mutate(hour = case_when(TIME %/% 100 < 1 ~ 0,
+                            TRUE             ~ as.numeric(str_sub(TIME, start = -4, end = -3))), .after = TIME) |> 
+    mutate(minu = as.numeric(str_sub(TIME, start = -2, end = -1)), .after = hour)
+```
+
+## Disposition
+
+```{r}
+hate_crime |> frq(Disposition)
+
+hate_crime <- hate_crime |>  
+    mutate(Disposition = case_when(str_detect(Disposition, "BONAFIDE") ~ str_replace(Disposition, "BONAFIDE", "BONA FIDE"),
+                                   TRUE ~ Disposition))
+```
+
+
+## Motivation
+
+```{r}
+hate_crime |> frq(Motivation)
+
+hate_crime <- hate_crime |> 
+    mutate(Motivation_revise = case_when(str_detect(Motivation, "^NTI") ~ str_replace(Motivation, "NTI", "ANTI"),
+                                         str_detect(Motivation, "ANTI ARAB") ~ str_replace(Motivation, "ANTI ARAB", "ANTI-ARAB"),
+                                         str_detect(Motivation, "- ") ~ str_replace(Motivation, "- ", "-"),
+                                         str_detect(Motivation, "HISPANIC-LATINO") ~ str_replace(Motivation, "HISPANIC-LATINO", "HISPANIC/LATINO"),
+                                         TRUE ~ Motivation), .after = Motivation) |> 
+    mutate(Motivation_revise = str_remove(Motivation_revise, "^ANTI-"))
+
+
+sex_orientation <- c("BISEXUAL", "GAY (MALE)", "GAY/LESBIAN/BISEXUAL/TRANSGENDER (MIXED GROUP)", "LESBIAN")
+religion        <- c("ATHEISM/AGNOSTICISM", "CATHOLIC", "EASTERN ORTHODOX (GREEK, RUSSIAN)", "HINDU", "ISLAMIC/MUSLIM", "JEWISH",
+                     "MULTIPLE RELIGIONS/GROUPS", "OTHER CHRISTIAN", "OTHER RELIGION", "PROTESTANT")
+race_ethnicity  <- c("ARAB", "ASIAN", "BLACK/AFRICAN-AMERICAN", "HISPANIC/LATINO", "MULTIPLE RACES/GROUP", "OTHER ETHNICITY/NATIONAL ORIGIN",
+                     "WHITE")
+gender_identity <- c("TRANSGENDER", "TRANSGENDER NON-CONFORMING")
+citizenship     <- c("IMMIGRATION STATUS")
+disability      <- c("PHYSICAL DISABILITY")
+
+hate_crime <- hate_crime |> 
+    mutate(Motivation_category = case_when(Motivation_revise %in% sex_orientation ~ "Sex Orientation",
+                                           Motivation_revise %in% religion ~ "Religion",
+                                           Motivation_revise %in% race_ethnicity ~ "Race and Ethnicity",
+                                           Motivation_revise %in% gender_identity ~ "Gender Identity",
+                                           Motivation_revise %in% citizenship ~ "Citizenship",
+                                           Motivation_revise %in% disability ~ "Disability",), .after = Motivation) |> 
+    mutate(Motivation_category = as_factor(Motivation_category))
+
+hate_crime |> frq(Motivation_category)
+
+```
+
+# Visualization
+
+- At this moment, only those hate crimes being bona fide will be plotted.
+- Given that the statistic of year 2023 is still ongoing, only year 2012 to 2022 will be considered.
+
+```{r}
+hate_crime_true <- hate_crime |> filter(Disposition == "BONA FIDE" & year(DATE_new) < 2023)
+```
+
+
+## Year
+
+```{r}
+hate_crime_true |> 
+    mutate(Year = factor(year(DATE_new))) |> 
+    filter(!is.na(Year)) |> 
+    ggplot(aes(x = Year)) +
+    geom_bar() +
+    geom_text(aes(label = ..count..), stat = "count", color = "white", vjust = 1.5) +
+    labs(y = "Frequency of Hate Crime", title = "The Frequency of Hate Crime Between 2012 and 2022", 
+         subtitle = "The frequency of hate crime significantly increased from 2021 to 2022",
+         caption = "Data: Chicago Police Department (https://home.chicagopolice.org/statistics-data/data-dashboards/hate-crime-dashboard/)")
+    ```
+
+```{r}
+hate_crime_true_2021.2022 <- hate_crime_true |> 
+    mutate(Year = year(DATE_new)) |> 
+    filter(Year >= 2021 & Year <= 2022) |> 
+    mutate(Year = factor(Year)) |> 
+    group_by(Year, Motivation_category) |> 
+    summarise(frequency = n()) |> 
+    mutate(label = paste0(Motivation_category, " ", frequency)) |> 
+    as_tibble()
+
+CGPfunctions::newggslopegraph(dataframe = hate_crime_true_2021.2022, 
+                              Times = Year,
+                              Measurement = frequency,
+                              Grouping = Motivation_category,
+                              YTextSize = 4,
+                              Title = "Frequency of Four Categories of Hate Crime in 2021 and 2022",
+                              SubTitle = "Based on: Edward Tufte, Beautiful Evidence, 174, 176.",
+                              Caption = "Data: Chicago Police Department")
+ 
+hate_crime_true_2021.2022 |> 
+    ggplot(aes(x = Year, y = frequency, color = Motivation_category, group = Motivation_category)) +
+    geom_line(linewidth = 1.5) + geom_point(size = 2.0) + 
+    labs(title = "From 2021 to 2022, the Occurrence of Hate Crime Increased",
+         caption = "Data: Chicago Police Department (https://home.chicagopolice.org/statistics-data/data-dashboards/hate-crime-dashboard/) \n
+                    Visualization: Yu-Chuan Hung @yuchuan22659034",
+         subtitle = "Hate Crime resulting from victims' race and ethnicity doubled.") +
+    theme_minimal(base_size = 18) +
+    theme(legend.position = "none", 
+          axis.title.x = element_blank(),
+          
+          ## Changing font size of x-axis and main title of the graph
+          plot.title = element_text(color = "black", size = 20, face = "bold"),
+          axis.text.x = element_text(vjust = 0.5, hjust = 0.5, size = 12, face = "bold"),
+          plot.caption = element_text(color = "darkgrey", size = 10),
+          
+          ## Removing grid lines
+          panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank(),
+          panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),
+          
+          axis.ticks.y = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.y = element_blank(), axis.text.y = element_blank()
+          ) +
+    geom_text(data = subset(hate_crime_true_2021.2022, Year == 2022), 
+              aes(x = Year, y = frequency, color = Motivation_category, label = frequency), 
+              size = 5, hjust = -1.5) +
+    geom_text(data = subset(hate_crime_true_2021.2022, Year == 2021), 
+              aes(label = label),
+              size = 5, hjust = 1.1) +
+    geom_vline(xintercept = 1, color = "darkgrey") +
+    geom_vline(xintercept = 2, color = "darkgrey") +
+    scale_color_brewer(palette = "Dark2")
+```
+
+```{r}
+hate_crime_true |> 
+    mutate(Year = year(DATE_new)) |> 
+    group_by(Year, Motivation_category) |> 
+    summarise(frequency = n()) |> 
+    ggplot(aes(x = Year, y = frequency, color = Motivation_category)) +
+    geom_line() +
+    geom_point()
+```
+
+
+```{r}
+hate_crime |> 
+    frq(year(DATE_new))
+
+
+
+hate_crime |> 
+    frq(TIME)
+
+hate_crime |>  
+    filter(Disposition == "BONA FIDE") |> 
+    frq(year(DATE_new))
+
+hate_crime |> 
+    filter(year(DATE_new) >= 2022) |> 
+    frq(hour)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
