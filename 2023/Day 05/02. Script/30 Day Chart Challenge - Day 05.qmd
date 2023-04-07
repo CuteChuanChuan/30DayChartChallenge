@@ -131,7 +131,7 @@ hate_crime_true_2021.2022 <- hate_crime_true |>
 hate_crime_true_2021.2022 |> 
     ggplot(aes(x = Year, y = frequency, color = Motivation_category, group = Motivation_category)) +
     geom_line(linewidth = 1.5) + geom_point(size = 2.0) + 
-    labs(title = "From 2021 to 2022, the Occurrence of Hate Crime Increased",
+    labs(title = "From 2021 to 2022, the Occurrence of Hate Crime in Chicago Increased.",
          caption = "Data: Chicago Police Department (https://home.chicagopolice.org/statistics-data/data-dashboards/hate-crime-dashboard/) \n
                     Visualization: Yu-Chuan Hung @yuchuan22659034",
          subtitle = "Hate Crime resulting from victims' race and ethnicity doubled.") +
